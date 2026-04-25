@@ -2,17 +2,21 @@ import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
+function requireEnv(name: keyof ImportMetaEnv): string {
+  const value = import.meta.env[name]
+  if (!value) {
+    throw new Error(`Missing required env var: ${name}`)
+  }
+  return value
+}
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? 'AIzaSyALcQXGshu0qWpuJXkJdn3QL_u8gradD9k',
-  authDomain:
-    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? 'fluencypilot.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? 'fluencypilot',
-  storageBucket:
-    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? 'fluencypilot.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '788946891730',
-  appId:
-    import.meta.env.VITE_FIREBASE_APP_ID ??
-    '1:788946891730:web:replace-with-your-web-app-id',
+  apiKey: requireEnv('VITE_FIREBASE_API_KEY'),
+  authDomain: requireEnv('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: requireEnv('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: requireEnv('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: requireEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: requireEnv('VITE_FIREBASE_APP_ID'),
 }
 
 const app = initializeApp(firebaseConfig)
