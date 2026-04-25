@@ -71,3 +71,17 @@ export default defineConfig([
   },
 ])
 ```
+
+## Firebase setup
+
+This app uses the modular Firebase Web SDK through npm. Keep real values in `.env` locally and add the same keys as GitHub Secrets for Pages builds:
+
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_FIREBASE_MEASUREMENT_ID` optional, for Analytics
+
+`.env.example` should stay empty or placeholder-only.

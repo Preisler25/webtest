@@ -1,0 +1,77 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function wordsetDoc(wordsetId) {
+      return get(/databases/$(database)/documents/wordsets/$(wordsetId));
+    }
+
+    function isWordsetOwner(wordsetId) {
+      return isSignedIn()
+        && wordsetDoc(wordsetId).exists()
+        && wordsetDoc(wordsetId).data.userId == request.auth.uid;
+    }
+
+    function isPublicWordset(wordsetId) {
+      return wordsetDoc(wordsetId).exists() && wordsetDoc(wordsetId).data.isPublic == true;
+    }
+
+    match /users/{userId} {
+      allow create: if isOwner(userId)
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && request.resource.data.tasksCompleted is int
+        && request.resource.data.totalWords is int;
+
+      allow read, update, delete: if isOwner(userId);
+    }
+
+    match /wordsets/{wordsetId} {
+      allow read: if isWordsetOwner(wordsetId) || resource.data.isPublic == true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.isPublic is bool
+        && request.resource.data.sourceLang is string
+        && request.resource.data.targetLang is string
+        && request.resource.data.wordCount is int;
+
+      allow update, delete: if isWordsetOwner(wordsetId);
+
+      match /words/{wordId} {
+        allow read, create, update, delete: if isWordsetOwner(wordsetId) || isPublicWordset(wordsetId);
+      }
+    }
+
+    match /userActivity/{userId}/days/{dayId} {
+      allow read: if isOwner(userId);
+
+      allow create, update: if isOwner(userId)
+        && request.resource.data.date is string
+        && request.resource.data.tasksCount is int
+        && request.resource.data.wordsLearned is int;
+
+      allow delete: if isOwner(userId);
+    }
+
+    match /userProgress/{userId}/wordsets/{wordsetId} {
+      allow read: if isOwner(userId);
+
+      allow create, update: if isOwner(userId)
+        && request.resource.data.wordsetId is string
+        && request.resource.data.correctAnswers is int
+        && request.resource.data.incorrectAnswers is int;
+
+      allow delete: if isOwner(userId);
+    }
+  }
+}
