@@ -3,27 +3,25 @@ import { getAnalytics, isSupported } from 'firebase/analytics'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-function requireEnv(name: keyof ImportMetaEnv): string {
-  const value = import.meta.env[name]
-  if (!value) {
-    throw new Error(`Missing required env var: ${name}`)
-  }
-  return value
-}
+const apiKey = import.meta.env.VITE_FIREBASE_API_KEY as string | undefined
+
+export const firebaseConfigError: string | null = !apiKey
+  ? 'Firebase keys are missing. Add VITE_FIREBASE_API_KEY and the other VITE_FIREBASE_* secrets to your GitHub repository settings (Settings → Secrets and variables → Actions), then redeploy.'
+  : null
 
 const firebaseConfig = {
-  apiKey: requireEnv('VITE_FIREBASE_API_KEY'),
-  authDomain: requireEnv('VITE_FIREBASE_AUTH_DOMAIN'),
-  projectId: requireEnv('VITE_FIREBASE_PROJECT_ID'),
-  storageBucket: requireEnv('VITE_FIREBASE_STORAGE_BUCKET'),
-  messagingSenderId: requireEnv('VITE_FIREBASE_MESSAGING_SENDER_ID'),
-  appId: requireEnv('VITE_FIREBASE_APP_ID'),
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY ?? '') as string,
+  authDomain: (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? '') as string,
+  projectId: (import.meta.env.VITE_FIREBASE_PROJECT_ID ?? '') as string,
+  storageBucket: (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? '') as string,
+  messagingSenderId: (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '') as string,
+  appId: (import.meta.env.VITE_FIREBASE_APP_ID ?? '') as string,
+  measurementId: (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ?? '') as string,
 }
 
 const app = initializeApp(firebaseConfig)
 
-if (firebaseConfig.measurementId) {
+if (!firebaseConfigError && firebaseConfig.measurementId) {
   void isSupported().then((supported) => {
     if (supported) {
       getAnalytics(app)

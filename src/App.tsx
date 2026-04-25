@@ -21,7 +21,7 @@ import {
   where,
 } from 'firebase/firestore'
 import './App.css'
-import { auth, db } from './firebase.ts'
+import { auth, db, firebaseConfigError } from './firebase.ts'
 
 type Tab = 'home' | 'practice' | 'profile'
 
@@ -308,6 +308,36 @@ function App() {
     setTab('home')
   }
 
+  if (firebaseConfigError) {
+    return (
+      <main className="app-shell">
+        <section className="screen auth-screen">
+          <header className="hero-head">
+            <div>
+              <p className="eyebrow">FluencyPilot</p>
+              <h1>Konfiguráció szükséges</h1>
+            </div>
+            <div className="orb" aria-hidden="true" />
+          </header>
+          <div className="card">
+            <p className="eyebrow">Firebase keys hiányoznak</p>
+            <p className="muted">
+              A VITE_FIREBASE_* secret-eket add hozzá a GitHub repository beállításaihoz:
+            </p>
+            <p className="muted">
+              <strong>Settings → Secrets and variables → Actions</strong>
+            </p>
+            <p className="muted">
+              Szükséges kulcsok: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN,
+              VITE_FIREBASE_PROJECT_ID, VITE_FIREBASE_STORAGE_BUCKET,
+              VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID
+            </p>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
   if (!authReady) {
     return <main className="app-shell loading">Betoltes...</main>
   }
@@ -566,6 +596,7 @@ function App() {
           )}
 
           <nav className="bottom-nav" aria-label="Fo navigacio">
+            <span className="nav-brand" aria-hidden="true">FluencyPilot</span>
             <button
               className={tab === 'home' ? 'active' : ''}
               onClick={() => setTab('home')}
