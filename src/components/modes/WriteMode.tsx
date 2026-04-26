@@ -18,6 +18,12 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
+function pickNext(pool: WordEntry[], excludeId: string): WordEntry {
+  const active = pool.filter((e) => e.remaining > 0)
+  const others = active.filter((e) => e.word.id !== excludeId)
+  return pickRandom(others.length > 0 ? others : active)
+}
+
 export default function WriteMode({ words, direction, onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>('setup')
   const [repetitions, setRepetitions] = useState(3)
@@ -75,7 +81,7 @@ export default function WriteMode({ words, direction, onComplete }: Props) {
         if (active.length === 0) {
           setPhase('done')
         } else {
-          setCurrent(pickRandom(active))
+          setCurrent(pickNext(newPool, current.word.id))
         }
       }, 900)
     } else {
@@ -90,7 +96,7 @@ export default function WriteMode({ words, direction, onComplete }: Props) {
 
       setTimeout(() => {
         setAnswerState('asking')
-        setCurrent(pickRandom(newPool.filter((e) => e.remaining > 0)))
+        setCurrent(pickNext(newPool, current.word.id))
       }, 1500)
     }
   }
