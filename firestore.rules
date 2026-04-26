@@ -50,6 +50,11 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    match /leaderboard/{wordsetId}/entries/{entryId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(entryId);
+    }
+
     match /userProgress/{userId}/wordsets/{wordsetId} {
       allow read: if isOwner(userId);
 

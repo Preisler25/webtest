@@ -4,7 +4,7 @@ import type { Word, PracticeDirection } from '../../types.ts'
 type Props = {
   words: Word[]
   direction: PracticeDirection
-  onComplete: (correct: number) => void
+  onComplete: (correct: number, total?: number) => void
 }
 
 function shuffle<T>(arr: T[]): T[] {

@@ -251,6 +251,7 @@ function App() {
             {tab === 'practice' && (
               <PracticeTab
                 user={user}
+                profile={profile}
                 wordsets={wordsets}
                 onRefresh={() => loadDashboard(user.uid)}
               />

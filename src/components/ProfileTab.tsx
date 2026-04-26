@@ -9,18 +9,27 @@ type Props = {
   onSignOut: () => Promise<void>
 }
 
-function buildHeatmap(activity: UserActivity[]) {
-  const lookup = new Map(activity.map((a) => [a.date, a.tasksCount]))
-  const today = new Date()
-  const cells: { date: string; level: number }[] = []
+const DAY_HEADERS = ['H', 'K', 'Sz', 'Cs', 'P', 'Szo', 'V']
 
-  for (let i = 363; i >= 0; i--) {
-    const d = new Date(today)
-    d.setDate(d.getDate() - i)
-    const key = d.toISOString().slice(0, 10)
-    const count = lookup.get(key) ?? 0
+function buildMonthCells(activity: UserActivity[]) {
+  const lookup = new Map(activity.map((a) => [a.date, a.tasksCount]))
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const firstDow = new Date(year, month, 1).getDay()
+  const offset = (firstDow + 6) % 7 // Monday-first
+  const todayKey = now.toISOString().slice(0, 10)
+
+  const cells: { date: string | null; level: number; day: number | null; isToday: boolean }[] = []
+
+  for (let i = 0; i < offset; i++) cells.push({ date: null, level: 0, day: null, isToday: false })
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const count = lookup.get(dateStr) ?? 0
     const level = count === 0 ? 0 : count <= 2 ? 1 : count <= 4 ? 2 : count <= 7 ? 3 : 4
-    cells.push({ date: key, level })
+    cells.push({ date: dateStr, level, day: d, isToday: dateStr === todayKey })
   }
   return cells
 }
@@ -40,23 +49,9 @@ export default function ProfileTab({ user, profile, activity, onSignOut }: Props
     return count
   }, [activity])
 
-  const heatmapCells = useMemo(() => buildHeatmap(activity), [activity])
+  const monthCells = useMemo(() => buildMonthCells(activity), [activity])
 
-  const MONTH_LABELS = useMemo(() => {
-    const labels: { label: string; col: number }[] = []
-    let lastMonth = -1
-    heatmapCells.forEach((cell, i) => {
-      const month = new Date(cell.date).getMonth()
-      if (month !== lastMonth) {
-        labels.push({
-          label: new Date(cell.date).toLocaleString('hu-HU', { month: 'short' }),
-          col: Math.floor(i / 7) + 1,
-        })
-        lastMonth = month
-      }
-    })
-    return labels
-  }, [heatmapCells])
+  const monthLabel = new Date().toLocaleString('hu-HU', { month: 'long', year: 'numeric' })
 
   return (
     <div className="tab-page">
@@ -65,7 +60,6 @@ export default function ProfileTab({ user, profile, activity, onSignOut }: Props
       </header>
 
       <div className="scroll-column">
-        {/* Avatar + info */}
         <section className="glass profile-card">
           <div className="profile-avatar">{displayName[0].toUpperCase()}</div>
           <div>
@@ -74,8 +68,7 @@ export default function ProfileTab({ user, profile, activity, onSignOut }: Props
           </div>
         </section>
 
-        {/* Stats */}
-        <div className="stats-row stats-row--profile">
+        <div className="stats-row">
           <div className="stat-card stat-card--coral">
             <span className="stat-card-icon">🔥</span>
             <p className="stat-number">{streak}</p>
@@ -93,36 +86,32 @@ export default function ProfileTab({ user, profile, activity, onSignOut }: Props
           </div>
         </div>
 
-        {/* Activity heatmap */}
-        <section className="glass heatmap-section">
-          <p className="eyebrow">Aktivitás az elmúlt évben</p>
-          <div className="heatmap-scroll">
-            <div className="heatmap-month-labels" style={{ gridTemplateColumns: `repeat(52, 1fr)` }}>
-              {MONTH_LABELS.map((m) => (
-                <span
-                  key={m.label + m.col}
-                  className="heatmap-month"
-                  style={{ gridColumn: m.col }}
-                >
-                  {m.label}
-                </span>
-              ))}
-            </div>
-            <div className="heatmap-grid">
-              {heatmapCells.map((cell) => (
-                <div
-                  key={cell.date}
-                  className="heatmap-cell"
-                  data-level={cell.level}
-                  title={`${cell.date}: ${activity.find((a) => a.date === cell.date)?.tasksCount ?? 0} feladat`}
-                />
-              ))}
-            </div>
+        <section className="glass">
+          <div className="section-head">
+            <p className="eyebrow">Aktivitás</p>
+            <span className="muted" style={{ fontSize: '0.78rem', textTransform: 'capitalize' }}>{monthLabel}</span>
           </div>
+
+          <div className="month-calendar">
+            {DAY_HEADERS.map((d) => (
+              <div key={d} className="month-day-header">{d}</div>
+            ))}
+            {monthCells.map((cell, i) => (
+              <div
+                key={i}
+                className={`month-cell${cell.isToday ? ' month-cell--today' : ''}${cell.date === null ? ' month-cell--empty' : ''}`}
+                data-level={cell.date ? cell.level : undefined}
+                title={cell.date ? `${cell.date}: ${activity.find((a) => a.date === cell.date)?.tasksCount ?? 0} feladat` : undefined}
+              >
+                {cell.day !== null && <span className="month-cell-day">{cell.day}</span>}
+              </div>
+            ))}
+          </div>
+
           <div className="heatmap-legend">
             <span className="muted" style={{ fontSize: '0.72rem' }}>Kevesebb</span>
             {[0, 1, 2, 3, 4].map((l) => (
-              <div key={l} className="heatmap-cell heatmap-cell--legend" data-level={l} />
+              <div key={l} className="month-legend-dot" data-level={l} />
             ))}
             <span className="muted" style={{ fontSize: '0.72rem' }}>Több</span>
           </div>

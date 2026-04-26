@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   getDocs,
+  getDoc,
   increment,
   orderBy,
   query,
@@ -11,7 +12,7 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { db } from '../firebase.ts'
-import type { Wordset, Word, PracticeMode, PracticeDirection } from '../types.ts'
+import type { Wordset, Word, PracticeMode, PracticeDirection, UserProfile } from '../types.ts'
 import FlashcardMode from './modes/FlashcardMode.tsx'
 import QuizMode from './modes/QuizMode.tsx'
 import MatchPairsMode from './modes/MatchPairsMode.tsx'
@@ -19,14 +20,18 @@ import WriteMode from './modes/WriteMode.tsx'
 
 type Props = {
   user: User
+  profile: UserProfile | null
   wordsets: Wordset[]
   onRefresh: () => Promise<void>
 }
 
+type LeaderboardEntry = { userId: string; displayName: string; bestPercent: number }
+
 type Stage =
   | { kind: 'library' }
-  | { kind: 'selector'; wordset: Wordset }
+  | { kind: 'selector'; wordset: Wordset; words: Word[] }
   | { kind: 'practicing'; wordset: Wordset; mode: PracticeMode; direction: PracticeDirection; words: Word[] }
+  | { kind: 'results'; wordset: Wordset; words: Word[]; correct: number; leaderboard: LeaderboardEntry[] }
 
 const MODES: { id: PracticeMode; label: string; icon: string; desc: string }[] = [
   { id: 'flashcard', label: 'Kártyák', icon: '🃏', desc: 'Lapozd át a szavakat' },
@@ -44,10 +49,11 @@ function langFlag(code: string) {
   return LANGS[code.toLowerCase()] ?? code.toUpperCase()
 }
 
-export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
+export default function PracticeTab({ user, profile, wordsets, onRefresh }: Props) {
   const [stage, setStage] = useState<Stage>({ kind: 'library' })
   const [search, setSearch] = useState('')
   const [langFilter, setLangFilter] = useState<string>('all')
+  const [direction, setDirection] = useState<PracticeDirection>('src')
   const [wordsLoading, setWordsLoading] = useState(false)
 
   const allLangs = [...new Set(wordsets.flatMap((ws) => [ws.sourceLang, ws.targetLang]))]
@@ -66,11 +72,8 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
         query(collection(db, 'wordsets', wordset.id, 'words'), orderBy('source')),
       )
       const words = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Word, 'id'>) }))
-      if (words.length < 2) {
-        alert('Legalább 2 szó kell a gyakorláshoz.')
-        return
-      }
-      setStage({ kind: 'selector', wordset })
+      if (words.length < 2) { alert('Legalább 2 szó kell a gyakorláshoz.'); return }
+      setStage({ kind: 'selector', wordset, words })
     } catch (err) {
       console.error(err)
     } finally {
@@ -78,27 +81,16 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
     }
   }
 
-  async function startPractice(
-    wordset: Wordset,
-    mode: PracticeMode,
-    direction: PracticeDirection,
-  ) {
-    setWordsLoading(true)
-    try {
-      const snap = await getDocs(
-        query(collection(db, 'wordsets', wordset.id, 'words'), orderBy('source')),
-      )
-      const words = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Word, 'id'>) }))
-      setStage({ kind: 'practicing', wordset, mode, direction, words })
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setWordsLoading(false)
-    }
+  function startPractice(wordset: Wordset, words: Word[], mode: PracticeMode) {
+    setStage({ kind: 'practicing', wordset, mode, direction, words })
   }
 
-  async function handleComplete(correct: number, wordset: Wordset) {
+  async function handleComplete(correct: number, wordset: Wordset, words: Word[], total?: number) {
     const today = new Date().toISOString().slice(0, 10)
+    const denominator = total ?? words.length
+    const percent = Math.round((correct / denominator) * 100)
+    const displayName = profile?.displayName ?? user.email?.split('@')[0] ?? 'Tanuló'
+
     try {
       await setDoc(
         doc(db, 'userActivity', user.uid, 'days', today),
@@ -109,20 +101,33 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
         tasksCompleted: increment(1),
         totalWords: increment(correct),
       })
+
+      // Save best score to leaderboard
+      const entryRef = doc(db, 'leaderboard', wordset.id, 'entries', user.uid)
+      const existing = await getDoc(entryRef)
+      if (!existing.exists() || (existing.data().bestPercent ?? 0) < percent) {
+        await setDoc(entryRef, { userId: user.uid, displayName, bestPercent: percent })
+      }
+
+      // Fetch leaderboard
+      const lbSnap = await getDocs(collection(db, 'leaderboard', wordset.id, 'entries'))
+      const leaderboard: LeaderboardEntry[] = lbSnap.docs
+        .map((d) => d.data() as LeaderboardEntry)
+        .sort((a, b) => b.bestPercent - a.bestPercent)
+
       await onRefresh()
+      setStage({ kind: 'results', wordset, words, correct, leaderboard })
     } catch (err) {
       console.error('[handleComplete]', err)
+      setStage({ kind: 'selector', wordset, words })
     }
-    setStage({ kind: 'selector', wordset })
   }
 
-  // ── Library ──────────────────────────────────────────────
+  // ── Library ───────────────────────────────────────────────
   if (stage.kind === 'library') {
     return (
       <div className="tab-page">
-        <header className="page-header">
-          <h2>Gyakorlás</h2>
-        </header>
+        <header className="page-header"><h2>Gyakorlás</h2></header>
         <div className="scroll-column">
           <div className="search-row">
             <input
@@ -166,7 +171,9 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
                   <button className="wordset-card-btn full" onClick={() => selectWordset(ws)}>
                     <div className="wordset-card-info">
                       <strong>{ws.title}</strong>
-                      <span className="lang-badge">{langFlag(ws.sourceLang)} {ws.sourceLang.toUpperCase()} → {langFlag(ws.targetLang)} {ws.targetLang.toUpperCase()}</span>
+                      <span className="lang-badge">
+                        {langFlag(ws.sourceLang)} {ws.sourceLang.toUpperCase()} → {langFlag(ws.targetLang)} {ws.targetLang.toUpperCase()}
+                      </span>
                     </div>
                     <div className="wordset-card-meta">
                       <span>{ws.wordCount} szó</span>
@@ -184,7 +191,10 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
 
   // ── Selector ──────────────────────────────────────────────
   if (stage.kind === 'selector') {
-    const { wordset } = stage
+    const { wordset, words } = stage
+    const from = direction === 'src' ? wordset.sourceLang : wordset.targetLang
+    const to = direction === 'src' ? wordset.targetLang : wordset.sourceLang
+
     return (
       <div className="tab-page">
         <header className="page-header">
@@ -194,15 +204,40 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
         <div className="scroll-column">
           <section className="card">
             <p className="eyebrow">Irány</p>
-            <div className="direction-row">
-              {(['src', 'tgt'] as PracticeDirection[]).map((dir) => (
-                <DirectionCard
-                  key={dir}
-                  direction={dir}
-                  wordset={wordset}
-                  onSelect={(mode) => startPractice(wordset, mode, dir)}
-                  wordsLoading={wordsLoading}
-                />
+            <div className="direction-radios">
+              {(['src', 'tgt'] as PracticeDirection[]).map((dir) => {
+                const f = dir === 'src' ? wordset.sourceLang : wordset.targetLang
+                const t = dir === 'src' ? wordset.targetLang : wordset.sourceLang
+                return (
+                  <label key={dir} className={`direction-radio${direction === dir ? ' direction-radio--active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="direction"
+                      value={dir}
+                      checked={direction === dir}
+                      onChange={() => setDirection(dir)}
+                    />
+                    <span>{langFlag(f)} {f.toUpperCase()} → {langFlag(t)} {t.toUpperCase()}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="card">
+            <p className="eyebrow">Mód — {langFlag(from)} {from.toUpperCase()} → {langFlag(to)} {to.toUpperCase()}</p>
+            <div className="mode-grid">
+              {MODES.map((m) => (
+                <button
+                  key={m.id}
+                  className="mode-card"
+                  onClick={() => startPractice(wordset, words, m.id)}
+                  disabled={wordsLoading}
+                >
+                  <span className="mode-icon">{m.icon}</span>
+                  <span className="mode-label">{m.label}</span>
+                  <span className="mode-desc muted">{m.desc}</span>
+                </button>
               ))}
             </div>
           </section>
@@ -211,64 +246,83 @@ export default function PracticeTab({ user, wordsets, onRefresh }: Props) {
     )
   }
 
-  // ── Practicing ──────────────────────────────────────────────
-  const { wordset, mode, direction, words } = stage
+  // ── Results ───────────────────────────────────────────────
+  if (stage.kind === 'results') {
+    const { wordset, words, correct, leaderboard } = stage
+    const percent = Math.round((correct / words.length) * 100)
+
+    return (
+      <div className="tab-page">
+        <header className="page-header">
+          <button className="btn-ghost back-btn" onClick={() => setStage({ kind: 'selector', wordset, words })}>
+            ← Vissza
+          </button>
+          <h3>{wordset.title}</h3>
+        </header>
+        <div className="scroll-column">
+          <div className="results-screen results-screen--inline">
+            <div className="results-icon">🎉</div>
+            <p className="results-score">{percent}%</p>
+            <p className="muted">{correct}/{words.length} helyes válasz</p>
+            <div className="results-bar-wrap" style={{ width: '100%' }}>
+              <div className="results-bar" style={{ width: `${percent}%` }} />
+            </div>
+          </div>
+
+          {leaderboard.length > 0 && (
+            <section className="glass">
+              <p className="eyebrow">🏆 Ranglista</p>
+              <ul className="leaderboard-list">
+                {leaderboard.map((entry, i) => (
+                  <li
+                    key={entry.userId}
+                    className={`leaderboard-item${entry.userId === user.uid ? ' leaderboard-item--me' : ''}`}
+                  >
+                    <span className="lb-rank">
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                    </span>
+                    <span className="lb-name">{entry.displayName}</span>
+                    <span className="lb-percent">{entry.bestPercent}%</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <button className="btn-primary" onClick={() => setStage({ kind: 'selector', wordset, words })}>
+            Újra próbálom
+          </button>
+          <button className="btn-ghost" onClick={() => setStage({ kind: 'library' })}>
+            Szókészlet választó
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Practicing ────────────────────────────────────────────
+  const { wordset, mode, words } = stage
 
   const modeProps = {
     words,
-    direction,
-    onComplete: (correct: number) => handleComplete(correct, wordset),
+    direction: stage.direction,
+    onComplete: (correct: number, total?: number) => handleComplete(correct, wordset, words, total),
   }
 
   return (
     <div className="tab-page practice-active">
       <header className="page-header">
-        <button className="btn-ghost back-btn" onClick={() => setStage({ kind: 'selector', wordset })}>
+        <button className="btn-ghost back-btn" onClick={() => setStage({ kind: 'selector', wordset, words })}>
           ← {wordset.title}
         </button>
-        <span className="practice-mode-badge">{MODES.find((m) => m.id === mode)?.icon} {MODES.find((m) => m.id === mode)?.label}</span>
+        <span className="practice-mode-badge">
+          {MODES.find((m) => m.id === mode)?.icon} {MODES.find((m) => m.id === mode)?.label}
+        </span>
       </header>
       {mode === 'flashcard' && <FlashcardMode {...modeProps} />}
       {mode === 'quiz' && <QuizMode {...modeProps} />}
       {mode === 'match' && <MatchPairsMode {...modeProps} />}
       {mode === 'write' && <WriteMode {...modeProps} />}
-    </div>
-  )
-}
-
-function DirectionCard({
-  direction,
-  wordset,
-  onSelect,
-  wordsLoading,
-}: {
-  direction: PracticeDirection
-  wordset: Wordset
-  onSelect: (mode: PracticeMode) => void
-  wordsLoading: boolean
-}) {
-  const from = direction === 'src' ? wordset.sourceLang : wordset.targetLang
-  const to = direction === 'src' ? wordset.targetLang : wordset.sourceLang
-
-  return (
-    <div className="direction-block">
-      <div className="direction-label">
-        <span className="lang-badge">{langFlag(from)} {from.toUpperCase()} → {langFlag(to)} {to.toUpperCase()}</span>
-      </div>
-      <div className="mode-grid">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            className="mode-card"
-            onClick={() => onSelect(m.id)}
-            disabled={wordsLoading}
-          >
-            <span className="mode-icon">{m.icon}</span>
-            <span className="mode-label">{m.label}</span>
-            <span className="mode-desc muted">{m.desc}</span>
-          </button>
-        ))}
-      </div>
     </div>
   )
 }
