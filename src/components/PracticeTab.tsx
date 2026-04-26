@@ -7,7 +7,6 @@ import {
   increment,
   orderBy,
   query,
-  serverTimestamp,
   setDoc,
   updateDoc,
 } from 'firebase/firestore'
