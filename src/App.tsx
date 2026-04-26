@@ -117,7 +117,11 @@ function App() {
 
     try {
       const profileRef = doc(db, 'users', uid)
-      const profileSnap = await getDoc(profileRef)
+      console.log('[loadDashboard] fetching profile for uid:', uid)
+      const profileSnap = await getDoc(profileRef).catch((err) => {
+        console.error('[loadDashboard] profile fetch failed:', err.code, err.message, err)
+        throw err
+      })
 
       if (profileSnap.exists()) {
         setProfile(profileSnap.data() as UserProfile)
@@ -128,7 +132,11 @@ function App() {
         where('userId', '==', uid),
         orderBy('createdAt', 'desc'),
       )
-      const wordsetSnap = await getDocs(wordsetsQuery)
+      console.log('[loadDashboard] fetching wordsets')
+      const wordsetSnap = await getDocs(wordsetsQuery).catch((err) => {
+        console.error('[loadDashboard] wordsets fetch failed:', err.code, err.message, err)
+        throw err
+      })
       const mappedWordsets = wordsetSnap.docs.map((snapshot) => ({
         id: snapshot.id,
         ...(snapshot.data() as Omit<Wordset, 'id'>),
@@ -141,7 +149,11 @@ function App() {
         collection(db, 'userActivity', uid, 'days'),
         where('date', '>=', dayAgo.toISOString().slice(0, 10)),
       )
-      const activitySnap = await getDocs(activityQuery)
+      console.log('[loadDashboard] fetching activity')
+      const activitySnap = await getDocs(activityQuery).catch((err) => {
+        console.error('[loadDashboard] activity fetch failed:', err.code, err.message, err)
+        throw err
+      })
       const mappedActivity = activitySnap.docs
         .map((snapshot) => ({
           id: snapshot.id,
@@ -153,6 +165,7 @@ function App() {
 
       setSelectedWordsetId((prev) => prev || mappedWordsets[0]?.id || '')
     } catch (error) {
+      console.error('[loadDashboard] unhandled error:', error)
       setOpMessage(
         error instanceof Error ? error.message : 'Nem sikerult betolteni az adatokat.',
       )
@@ -186,7 +199,9 @@ function App() {
 
     try {
       if (hasAccount) {
+        console.log('[handleAuth] signing in:', email.trim())
         await signInWithEmailAndPassword(auth, email.trim(), password)
+        console.log('[handleAuth] sign in success')
       } else {
         if (password !== rePassword) {
           throw new Error('A jelszavak nem egyeznek')
@@ -195,13 +210,18 @@ function App() {
           throw new Error('Add meg a neved')
         }
 
+        console.log('[handleAuth] creating account:', email.trim())
         const result = await createUserWithEmailAndPassword(auth, email.trim(), password)
+        console.log('[handleAuth] account created, writing profile for uid:', result.user.uid)
         await setDoc(doc(db, 'users', result.user.uid), {
           email: email.trim(),
           displayName: displayName.trim(),
           tasksCompleted: 0,
           totalWords: 0,
           createdAt: serverTimestamp(),
+        }).catch((err) => {
+          console.error('[handleAuth] profile write failed:', err.code, err.message, err)
+          throw err
         })
       }
 
@@ -209,6 +229,7 @@ function App() {
       setPassword('')
       setRePassword('')
     } catch (error) {
+      console.error('[handleAuth] error:', error)
       setAuthError(error instanceof Error ? error.message : 'Auth hiba')
     } finally {
       setAuthLoading(false)
