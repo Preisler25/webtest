@@ -10,20 +10,6 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function wordsetDoc(wordsetId) {
-      return get(/databases/$(database)/documents/wordsets/$(wordsetId));
-    }
-
-    function isWordsetOwner(wordsetId) {
-      return isSignedIn()
-        && wordsetDoc(wordsetId).exists()
-        && wordsetDoc(wordsetId).data.userId == request.auth.uid;
-    }
-
-    function isPublicWordset(wordsetId) {
-      return wordsetDoc(wordsetId).exists() && wordsetDoc(wordsetId).data.isPublic == true;
-    }
-
     match /users/{userId} {
       allow create: if isOwner(userId)
         && request.resource.data.email is string
@@ -35,7 +21,7 @@ service cloud.firestore {
     }
 
     match /wordsets/{wordsetId} {
-      allow read: if isWordsetOwner(wordsetId) || resource.data.isPublic == true;
+      allow read: if (isSignedIn() && resource.data.userId == request.auth.uid) || resource.data.isPublic == true;
 
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
@@ -45,10 +31,11 @@ service cloud.firestore {
         && request.resource.data.targetLang is string
         && request.resource.data.wordCount is int;
 
-      allow update, delete: if isWordsetOwner(wordsetId);
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
 
       match /words/{wordId} {
-        allow read, create, update, delete: if isWordsetOwner(wordsetId) || isPublicWordset(wordsetId);
+        allow read, create, update, delete: if isSignedIn() && get(/databases/$(database)/documents/wordsets/$(wordsetId)).data.userId == request.auth.uid
+          || get(/databases/$(database)/documents/wordsets/$(wordsetId)).data.isPublic == true;
       }
     }
 
