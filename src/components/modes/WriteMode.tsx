@@ -93,11 +93,6 @@ export default function WriteMode({ words, direction, onComplete }: Props) {
         e.word.id === current.word.id ? { ...e, remaining: e.remaining + 1 } : e,
       )
       setPool(newPool)
-
-      setTimeout(() => {
-        setAnswerState('asking')
-        setCurrent(pickNext(newPool, current.word.id))
-      }, 1500)
     }
   }
 
@@ -184,8 +179,19 @@ export default function WriteMode({ words, direction, onComplete }: Props) {
         <div className="feedback-banner feedback-banner--correct">✓ Helyes!</div>
       )}
       {answerState === 'wrong' && (
-        <div className="feedback-banner feedback-banner--wrong">
-          ✗ Helytelen — a helyes válasz: <strong>{correctAnswer}</strong>
+        <div className="feedback-wrong-block">
+          <div className="feedback-banner feedback-banner--wrong">
+            ✗ Helytelen — a helyes válasz: <strong>{correctAnswer}</strong>
+          </div>
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              setAnswerState('asking')
+              if (current) setCurrent(pickNext(pool, current.word.id))
+            }}
+          >
+            Következő →
+          </button>
         </div>
       )}
 
