@@ -224,56 +224,61 @@ export default function WordsetsTab({ user, wordsets, onRefresh }: Props) {
   }
 
   async function handleTxtCreate(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
     e.target.value = ''
     setTxtCreateLoading(true)
     setMessage('')
+    const results: string[] = []
     try {
-      const meta = parseWordsetFilename(file.name)
-      if (!meta) {
-        setMessage('Helytelen fájlnév. Formátum: Cím_forrás_cél_{pu|pr}.txt')
-        return
-      }
+      for (const file of files) {
+        const meta = parseWordsetFilename(file.name)
+        if (!meta) {
+          results.push(`❌ ${file.name}: helytelen fájlnév`)
+          continue
+        }
 
-      const text = await file.text()
-      const pairs = text
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.includes(':'))
-        .map((l) => { const c = l.indexOf(':'); return { source: l.slice(0, c).trim(), target: l.slice(c + 1).trim() } })
-        .filter((p) => p.source && p.target)
+        const text = await file.text()
+        const pairs = text
+          .split('\n')
+          .map((l) => l.trim())
+          .filter((l) => l.includes(':'))
+          .map((l) => { const c = l.indexOf(':'); return { source: l.slice(0, c).trim(), target: l.slice(c + 1).trim() } })
+          .filter((p) => p.source && p.target)
 
-      if (pairs.length === 0) {
-        setMessage('Nem találtam szavakat a fájlban (formátum: forrás:cél)')
-        return
-      }
+        if (pairs.length === 0) {
+          results.push(`❌ ${file.name}: nem találtam szavakat`)
+          continue
+        }
 
-      const wsRef = await addDoc(collection(db, 'wordsets'), {
-        userId: user.uid,
-        title: meta.title,
-        isPublic: meta.isPublic,
-        sourceLang: meta.sourceLang,
-        targetLang: meta.targetLang,
-        wordCount: pairs.length,
-        createdAt: serverTimestamp(),
-      })
-
-      const CHUNK = 500
-      for (let i = 0; i < pairs.length; i += CHUNK) {
-        const batch = writeBatch(db)
-        pairs.slice(i, i + CHUNK).forEach((p) => {
-          batch.set(doc(collection(db, 'wordsets', wsRef.id, 'words')), {
-            source: p.source,
-            target: p.target,
-            mastered: false,
-          })
+        const wsRef = await addDoc(collection(db, 'wordsets'), {
+          userId: user.uid,
+          title: meta.title,
+          isPublic: meta.isPublic,
+          sourceLang: meta.sourceLang,
+          targetLang: meta.targetLang,
+          wordCount: pairs.length,
+          createdAt: serverTimestamp(),
         })
-        await batch.commit()
+
+        const CHUNK = 500
+        for (let i = 0; i < pairs.length; i += CHUNK) {
+          const batch = writeBatch(db)
+          pairs.slice(i, i + CHUNK).forEach((p) => {
+            batch.set(doc(collection(db, 'wordsets', wsRef.id, 'words')), {
+              source: p.source,
+              target: p.target,
+              mastered: false,
+            })
+          })
+          await batch.commit()
+        }
+
+        results.push(`✅ "${meta.title}" – ${pairs.length} szó`)
       }
 
       await onRefresh()
-      setMessage(`"${meta.title}" létrehozva ${pairs.length} szóval.`)
+      setMessage(results.join('\n'))
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Hiba')
     } finally {
@@ -335,6 +340,7 @@ export default function WordsetsTab({ user, wordsets, onRefresh }: Props) {
               ref={txtCreateInputRef}
               type="file"
               accept=".txt"
+              multiple
               style={{ display: 'none' }}
               onChange={handleTxtCreate}
             />
