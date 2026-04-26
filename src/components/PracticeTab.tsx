@@ -166,14 +166,19 @@ export default function PracticeTab({ user, profile, wordsets, onRefresh }: Prop
             </p>
           ) : (
             <ul className="wordset-cards">
-              {filtered.map((ws) => (
+              {filtered.map((ws) => {
+                const isOwn = ws.userId === user.uid
+                return (
                 <li key={ws.id}>
                   <button className="wordset-card-btn full" onClick={() => selectWordset(ws)}>
                     <div className="wordset-card-info">
                       <strong>{ws.title}</strong>
-                      <span className="lang-badge">
-                        {langFlag(ws.sourceLang)} {ws.sourceLang.toUpperCase()} → {langFlag(ws.targetLang)} {ws.targetLang.toUpperCase()}
-                      </span>
+                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span className="lang-badge">
+                          {langFlag(ws.sourceLang)} {ws.sourceLang.toUpperCase()} → {langFlag(ws.targetLang)} {ws.targetLang.toUpperCase()}
+                        </span>
+                        {!isOwn && <span className="community-badge">👥 Közösségi</span>}
+                      </div>
                     </div>
                     <div className="wordset-card-meta">
                       <span>{ws.wordCount} szó</span>
@@ -181,7 +186,8 @@ export default function PracticeTab({ user, profile, wordsets, onRefresh }: Prop
                     </div>
                   </button>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </div>

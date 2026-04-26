@@ -42,9 +42,12 @@ export default function WordsetsTab({ user, wordsets, onRefresh }: Props) {
 
   const [message, setMessage] = useState('')
   const [importLoading, setImportLoading] = useState(false)
+  const [txtCreateLoading, setTxtCreateLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const txtCreateInputRef = useRef<HTMLInputElement>(null)
 
-  const filtered = wordsets.filter((ws) =>
+  const ownWordsets = wordsets.filter((ws) => ws.userId === user.uid)
+  const filtered = ownWordsets.filter((ws) =>
     ws.title.toLowerCase().includes(search.toLowerCase()),
   )
 
@@ -207,6 +210,77 @@ export default function WordsetsTab({ user, wordsets, onRefresh }: Props) {
     }
   }
 
+  function parseWordsetFilename(filename: string) {
+    const name = filename.replace(/\.txt$/i, '')
+    const parts = name.split('_')
+    if (parts.length < 4) return null
+    const visibility = parts[parts.length - 1].toLowerCase()
+    if (visibility !== 'pu' && visibility !== 'pr') return null
+    const targetLang = parts[parts.length - 2].toLowerCase()
+    const sourceLang = parts[parts.length - 3].toLowerCase()
+    const title = parts.slice(0, -3).join(' ')
+    if (!title.trim() || !sourceLang || !targetLang) return null
+    return { title: title.trim(), sourceLang, targetLang, isPublic: visibility === 'pu' }
+  }
+
+  async function handleTxtCreate(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setTxtCreateLoading(true)
+    setMessage('')
+    try {
+      const meta = parseWordsetFilename(file.name)
+      if (!meta) {
+        setMessage('Helytelen fájlnév. Formátum: Cím_forrás_cél_{pu|pr}.txt')
+        return
+      }
+
+      const text = await file.text()
+      const pairs = text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.includes(':'))
+        .map((l) => { const c = l.indexOf(':'); return { source: l.slice(0, c).trim(), target: l.slice(c + 1).trim() } })
+        .filter((p) => p.source && p.target)
+
+      if (pairs.length === 0) {
+        setMessage('Nem találtam szavakat a fájlban (formátum: forrás:cél)')
+        return
+      }
+
+      const wsRef = await addDoc(collection(db, 'wordsets'), {
+        userId: user.uid,
+        title: meta.title,
+        isPublic: meta.isPublic,
+        sourceLang: meta.sourceLang,
+        targetLang: meta.targetLang,
+        wordCount: pairs.length,
+        createdAt: serverTimestamp(),
+      })
+
+      const CHUNK = 500
+      for (let i = 0; i < pairs.length; i += CHUNK) {
+        const batch = writeBatch(db)
+        pairs.slice(i, i + CHUNK).forEach((p) => {
+          batch.set(doc(collection(db, 'wordsets', wsRef.id, 'words')), {
+            source: p.source,
+            target: p.target,
+            mastered: false,
+          })
+        })
+        await batch.commit()
+      }
+
+      await onRefresh()
+      setMessage(`"${meta.title}" létrehozva ${pairs.length} szóval.`)
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Hiba')
+    } finally {
+      setTxtCreateLoading(false)
+    }
+  }
+
   async function deleteWordset(id: string) {
     if (!window.confirm('Biztosan törlöd ezt a szókészletet?')) return
     try {
@@ -247,6 +321,29 @@ export default function WordsetsTab({ user, wordsets, onRefresh }: Props) {
             </label>
             <button className="btn-primary" onClick={createWordset} disabled={creating}>
               {creating ? 'Létrehozás...' : 'Létrehozás'}
+            </button>
+          </section>
+
+          {/* Create from txt */}
+          <section className="card">
+            <p className="eyebrow">Létrehozás .txt fájlból</p>
+            <p className="muted" style={{ fontSize: '0.8rem' }}>
+              Fájlnév: <code style={{ background: 'rgba(255,255,255,0.08)', padding: '0.1rem 0.35rem', borderRadius: '0.35rem' }}>Cím_forrás_cél_pu.txt</code> (pu = nyilvános, pr = privát)
+            </p>
+            <p className="muted" style={{ fontSize: '0.8rem' }}>Tartalom: <code style={{ background: 'rgba(255,255,255,0.08)', padding: '0.1rem 0.35rem', borderRadius: '0.35rem' }}>forrásszó:célszó</code> (soronként)</p>
+            <input
+              ref={txtCreateInputRef}
+              type="file"
+              accept=".txt"
+              style={{ display: 'none' }}
+              onChange={handleTxtCreate}
+            />
+            <button
+              className="btn-secondary"
+              onClick={() => txtCreateInputRef.current?.click()}
+              disabled={txtCreateLoading}
+            >
+              {txtCreateLoading ? 'Importálás...' : '⬆ Szókészlet feltöltése .txt-ből'}
             </button>
           </section>
 

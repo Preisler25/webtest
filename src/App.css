@@ -642,6 +642,15 @@ select:focus {
   display: inline-block;
 }
 
+.community-badge {
+  font-size: 0.68rem;
+  color: #9b8cff;
+  background: rgba(155, 140, 255, 0.1);
+  border: 1px solid rgba(155, 140, 255, 0.25);
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+}
+
 .public-badge {
   font-size: 0.68rem;
   color: #4be0a0;

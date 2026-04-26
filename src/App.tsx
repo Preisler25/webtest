@@ -54,12 +54,16 @@ function App() {
       const profileSnap = await getDoc(doc(db, 'users', uid))
       if (profileSnap.exists()) setProfile(profileSnap.data() as UserProfile)
 
-      const wordsetSnap = await getDocs(
-        query(collection(db, 'wordsets'), where('userId', '==', uid), orderBy('createdAt', 'desc')),
-      )
-      setWordsets(
-        wordsetSnap.docs.map((s) => ({ id: s.id, ...(s.data() as Omit<Wordset, 'id'>) })),
-      )
+      const [ownSnap, publicSnap] = await Promise.all([
+        getDocs(query(collection(db, 'wordsets'), where('userId', '==', uid), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'wordsets'), where('isPublic', '==', true))),
+      ])
+      const ownWordsets = ownSnap.docs.map((s) => ({ id: s.id, ...(s.data() as Omit<Wordset, 'id'>) }))
+      const ownIds = new Set(ownWordsets.map((w) => w.id))
+      const communityWordsets = publicSnap.docs
+        .filter((s) => !ownIds.has(s.id))
+        .map((s) => ({ id: s.id, ...(s.data() as Omit<Wordset, 'id'>) }))
+      setWordsets([...ownWordsets, ...communityWordsets])
 
       const cutoff = new Date()
       cutoff.setDate(cutoff.getDate() - 365)
